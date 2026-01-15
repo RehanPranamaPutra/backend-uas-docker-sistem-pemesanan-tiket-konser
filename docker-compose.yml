@@ -1,0 +1,40 @@
+services:
+   # Database PostgreSQL khusus untuk Order
+  db-order:
+    image: postgres:15
+    container_name: db-order
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_ORDER_USER}
+      POSTGRES_PASSWORD: ${DB_ORDER_PASSWORD}
+      POSTGRES_DB: ${DB_ORDER_NAME}
+    ports:
+      - "${DB_ORDER_PORT}:5432"
+    
+  # Service Order (Go)
+  order-service:
+    build: ./order-services
+    container_name: order-service
+    ports:
+      - "${ORDER_SERVICE_PORT}:8080"
+    environment:
+      - DB_HOST=db-order
+      - DB_USER=${DB_ORDER_USER}
+      - DB_PASSWORD=${DB_ORDER_PASSWORD}
+      - DB_NAME=${DB_ORDER_NAME}
+      - DB_PORT=5432
+    depends_on:
+      - db-order
+  
+  # untuk melihat isi database postgres
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin-order
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com  # Email untuk login web
+      PGADMIN_DEFAULT_PASSWORD: admin        # Password untuk login web
+    ports:
+      - "5050:80"                            # Akses di browser lewat port 5050
+    depends_on:
+      - db-order
