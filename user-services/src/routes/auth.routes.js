@@ -93,4 +93,69 @@ router.get("/me", authRequired, async (req, res, next) => {
   }
 });
 
+// --- TAMBAHAN BARU: GET ALL USERS (Khusus Admin) ---
+router.get("/users", authRequired, async (req, res, next) => {
+  try {
+    // 1. Cek apakah yang request adalah Admin
+    if (req.user.role !== 'admin') {
+      throw new HttpError(403, "Access denied. Admins only.");
+    }
+
+    // 2. Ambil semua user dari database (kecuali password hash-nya)
+    const users = await User.find().select("-passwordHash");
+
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- 1. UPDATE USER (Hanya bisa update diri sendiri) ---
+router.put("/users/:id", authRequired, async (req, res, next) => {
+  try {
+    // Cek apakah ID yang mau diedit == ID orang yang login
+    // req.user.sub adalah ID dari token JWT
+    if (req.user.sub !== req.params.id) {
+      throw new HttpError(403, "Anda hanya boleh mengedit akun sendiri!");
+    }
+
+    const { username, email } = req.body;
+    
+    // Update data
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { username, email },
+      { new: true } // Agar yang dikembalikan adalah data terbaru
+    ).select("-passwordHash");
+
+    res.json(updatedUser);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- 2. DELETE USER (Hanya Admin yang bisa) ---
+router.delete("/users/:id", authRequired, async (req, res, next) => {
+  try {
+    // Cek apakah yang request adalah Admin
+    if (req.user.role !== 'admin') {
+      throw new HttpError(403, "Hanya Admin yang boleh menghapus user.");
+    }
+
+    // Cek user yang mau dihapus
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) throw new HttpError(404, "User tidak ditemukan");
+
+    // PENTING: Admin tidak boleh menghapus sesama Admin (untuk keamanan)
+    if (targetUser.role === 'admin') {
+      throw new HttpError(403, "Sesama Admin tidak boleh saling menghapus!");
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: "User berhasil dihapus" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

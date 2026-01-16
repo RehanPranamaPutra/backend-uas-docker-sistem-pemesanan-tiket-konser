@@ -14,3 +14,5 @@ Route::get('/concerts', [ConcertController::class, 'index']);
 Route::get('/concerts/{id}', [ConcertController::class, 'show']);
 Route::post('/concerts', [ConcertController::class, 'store']);
 Route::patch('/concerts/{id}/stock', [ConcertController::class, 'updateStock']);
+Route::put('/concerts/{id}', [ConcertController::class, 'update']); // Edit
+Route::delete('/concerts/{id}', [ConcertController::class, 'destroy']); // Hapus
