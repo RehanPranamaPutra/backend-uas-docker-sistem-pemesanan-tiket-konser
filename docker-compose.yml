@@ -90,6 +90,8 @@ services:
     environment:
       PORT: ${USER_PORT}
       MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASS}@user-db:27017/${MONGO_DB}?authSource=admin
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
     ports:
       - "${USER_PORT}:${USER_PORT}"
     depends_on:
@@ -101,6 +103,8 @@ services:
     container_name: catalog-db
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - catalog_mysql_data:/var/lib/mysql
@@ -111,10 +115,18 @@ services:
   catalog-service:
     build: ./catalog-services/app
     container_name: catalog-service
+    volumes:
+      - ./catalog-services/app:/var/www
+      - catalog_vendor:/var/www/vendor
     environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
       DB_HOST: catalog-db
+      DB_PORT: 3306
       DB_DATABASE: ${MYSQL_DATABASE}
-      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "${CATALOG_PORT}:8000"
     depends_on:
@@ -124,3 +136,4 @@ volumes:
   user_mongo_data:
   catalog_mysql_data:
   order_postgres_data:
+  catalog_vendor:

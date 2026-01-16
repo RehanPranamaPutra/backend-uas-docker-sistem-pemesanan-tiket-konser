@@ -14,3 +14,9 @@ Route::get('/concerts', [ConcertController::class, 'index']);
 Route::get('/concerts/{id}', [ConcertController::class, 'show']);
 Route::post('/concerts', [ConcertController::class, 'store']);
 Route::patch('/concerts/{id}/stock', [ConcertController::class, 'updateStock']);
+Route::put('/concerts/{id}', [ConcertController::class, 'update']);
+Route::patch('/concerts/{id}', [ConcertController::class, 'update']);
+Route::delete('/concerts/{id}', [ConcertController::class, 'destroy']);
+Route::post('/concerts/{id}', [ConcertController::class, 'update']);
+
+
