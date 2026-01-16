@@ -1,17 +1,17 @@
 services:
-   # Database PostgreSQL khusus untuk Order
+  # Database PostgreSQL khusus untuk Order
   db-order:
     image: postgres:15
     container_name: db-order
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${DB_ORDER_USER}
       POSTGRES_PASSWORD: ${DB_ORDER_PASSWORD}
       POSTGRES_DB: ${DB_ORDER_NAME}
     ports:
       - "${DB_ORDER_PORT}:5432"
-    
+    volumes:
+      - order_postgres_data:/var/lib/postgresql/data
+
   # Service Order (Go)
   order-service:
     build: ./order-services
@@ -26,18 +26,49 @@ services:
       - DB_PORT=5432
     depends_on:
       - db-order
-  
-  # untuk melihat isi database postgres
+      - reservation-service
+      - catalog-service
+
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin-order
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com  # Email untuk login web
-      PGADMIN_DEFAULT_PASSWORD: admin        # Password untuk login web
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
     ports:
-      - "5050:80"                            # Akses di browser lewat port 5050
+      - "15050:80"
     depends_on:
       - db-order
+
+  # ===== Redis (Reservation/Stock DB) =====
+  db-reservation:
+    image: redis:alpine
+    container_name: db-reservation
+    ports:
+      - "6379:6379"
+
+  # ===== Visualizer Redis (Browser) =====
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    environment:
+      - REDIS_HOSTS=local:db-reservation:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - db-reservation
+
+  # ===== Reservation Service (Python/FastAPI) =====
+  reservation-service:
+    build: ./reservation-services
+    container_name: reservation-service
+    ports:
+      - "5002:5002"
+    environment:
+      - REDIS_HOST=db-reservation  # PASTIKAN SAMA DENGAN NAMA SERVICE DI ATAS
+      - REDIS_PORT=6379
+    depends_on:
+      - db-reservation
 
   # ===== MongoDB (User DB) =====
   user-db:
@@ -51,11 +82,6 @@ services:
       - user_mongo_data:/data/db
     ports:
       - "27017:27017"
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   # ===== User Service (Express) =====
   user-service:
@@ -64,13 +90,10 @@ services:
     environment:
       PORT: ${USER_PORT}
       MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASS}@user-db:27017/${MONGO_DB}?authSource=admin
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
     ports:
       - "${USER_PORT}:${USER_PORT}"
     depends_on:
-      user-db:
-        condition: service_healthy
+      - user-db
 
   # ===== MySQL (Catalog DB) =====
   catalog-db:
@@ -78,41 +101,26 @@ services:
     container_name: catalog-db
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - catalog_mysql_data:/var/lib/mysql
     ports:
       - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   # ===== Catalog Service (Laravel) =====
   catalog-service:
     build: ./catalog-services/app
     container_name: catalog-service
-    volumes:
-      - ./catalog-services/app:/var/www
     environment:
-      APP_ENV: local
-      APP_DEBUG: "true"
-      DB_CONNECTION: mysql
       DB_HOST: catalog-db
-      DB_PORT: 3306
       DB_DATABASE: ${MYSQL_DATABASE}
-      DB_USERNAME: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
       - "${CATALOG_PORT}:8000"
     depends_on:
-      catalog-db:
-        condition: service_healthy
+      - catalog-db
 
 volumes:
   user_mongo_data:
   catalog_mysql_data:
-
+  order_postgres_data:

@@ -15,6 +15,7 @@ func main() {
 
 	// 3. Endpoint Pesanan
 	r.POST("/orders", handlers.CreateOrder)
+	r.POST("/orders/:id/confirm", handlers.ConfirmPayment)
 
 	// 4. Jalankan Server di Port 8080
 	r.Run(":8080")

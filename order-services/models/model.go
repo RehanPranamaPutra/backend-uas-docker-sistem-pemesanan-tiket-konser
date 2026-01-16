@@ -8,6 +8,7 @@ type Order struct {
 	EventID   uint      `json:"event_id"`   // ID Konser dari Laravel
 	Quantity  int       `json:"quantity"`   // Jumlah tiket
 	Total     float64   `json:"total"`      // Total harga
-	Status    string    `json:"status"`     // PENDING / SUCCESS
+	Status    string    `gorm:"type:varchar(20);default:'PENDING'" json:"status"`    // PENDING / SUCCESS
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

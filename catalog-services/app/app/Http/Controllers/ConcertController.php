@@ -35,14 +35,22 @@ class ConcertController extends Controller
 
     public function updateStock(Request $request, $id)
     {
+        // 1. Validasi agar 'reduce_by' harus ada dan berupa angka
         $request->validate([
-            'stock' => 'required|integer|min:0'
+            'reduce_by' => 'required|integer|min:1'
         ]);
 
         $concert = Concert::findOrFail($id);
-        $concert->stock = $request->stock;
+
+        // 2. LOGIKA PENTING: Kurangi stok yang ada dengan jumlah yang dibeli
+        // Jangan gunakan: $concert->stock = $request->stock (karena ini menimpa/mengganti)
+        $concert->stock = $concert->stock - $request->reduce_by;
+
         $concert->save();
 
-        return $concert;
+        return response()->json([
+            'message' => 'Stock updated successfully',
+            'remaining_stock' => $concert->stock
+        ]);
     }
 }
