@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Storage;
 use App\Models\Concert;
 use Illuminate\Http\Request;
 
@@ -19,18 +20,27 @@ class ConcertController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string',
             'location' => 'required|string',
             'date' => 'required|date',
             'price' => 'required|integer|min:0',
             'stock' => 'required|integer|min:0',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048'
+
         ]);
 
-        return response()->json(
-            Concert::create($data),
-            201
-        );
+        if ($request->hasFile('image')) {
+        $validated['image'] = $request->file('image')
+            ->store('concerts', 'public');
+        }
+
+        $concert = Concert::create($validated);
+
+        return response()->json([
+            'message' => 'Concert created',
+            'data' => $concert
+         ], 201);
     }
 
     public function updateStock(Request $request, $id)
@@ -53,4 +63,63 @@ class ConcertController extends Controller
             'remaining_stock' => $concert->stock
         ]);
     }
+
+        public function update(Request $request, $id)
+    {
+
+        $concert = Concert::findOrFail($id);
+
+        // Validasi: semua optional (partial update data)
+        $validated = $request->validate([
+            'name' => 'sometimes|required|string',
+            'location' => 'sometimes|required|string',
+            'date' => 'sometimes|required|date',
+            'price' => 'sometimes|required|integer|min:0',
+            'stock' => 'sometimes|required|integer|min:0',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048'
+        ]);
+
+        // Kalau ada upload image baru, hapus image lama dulu
+        if ($request->hasFile('image')) {
+            if (!empty($concert->image) && Storage::disk('public')->exists($concert->image)) {
+                Storage::disk('public')->delete($concert->image);
+            }
+
+            $validated['image'] = $request->file('image')->store('concerts', 'public');
+        }
+
+        if (empty($validated) && !$request->hasFile('image')) {
+            return response()->json([
+                'message' => 'No fields to update (request body not received)',
+                'received' => $request->all(),
+            ], 400);
+        }
+
+
+        $concert->update($validated);
+
+        $concert->refresh();
+
+        return response()->json([
+            'message' => 'Concert updated successfully',
+            'data' => $concert
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        $concert = Concert::findOrFail($id);
+
+        // Hapus file image kalau ada
+        if (!empty($concert->image) && Storage::disk('public')->exists($concert->image)) {
+            Storage::disk('public')->delete($concert->image);
+        }
+
+        $concert->delete();
+
+        return response()->json([
+            'message' => 'Concert deleted successfully'
+        ]);
+    }
+
 }
