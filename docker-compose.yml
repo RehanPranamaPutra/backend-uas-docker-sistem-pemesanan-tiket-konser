@@ -65,7 +65,7 @@ services:
     ports:
       - "5002:5002"
     environment:
-      - REDIS_HOST=db-reservation  # PASTIKAN SAMA DENGAN NAMA SERVICE DI ATAS
+      - REDIS_HOST=db-reservation # PASTIKAN SAMA DENGAN NAMA SERVICE DI ATAS
       - REDIS_PORT=6379
     depends_on:
       - db-reservation
@@ -97,30 +97,14 @@ services:
     depends_on:
       - user-db
 
-  # 2. Mongo Express untuk User DB (MongoDB)
-  mongo-express-user:
-    image: mongo-express
-    container_name: mongo-express-user
-    restart: always
-    ports:
-      - "8083:8081"
-    environment:
-      ME_CONFIG_MONGODB_SERVER: user-db      # Konek ke container Mongo
-      ME_CONFIG_MONGODB_PORT: 27017
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASS}
-      # Username/Password untuk login ke web Mongo Express-nya (Bebas)
-      ME_CONFIG_BASICAUTH_USERNAME: admin
-      ME_CONFIG_BASICAUTH_PASSWORD: admin
-    depends_on:
-      - user-db
-
   # ===== MySQL (Catalog DB) =====
   catalog-db:
     image: mysql:8.0
     container_name: catalog-db
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - catalog_mysql_data:/var/lib/mysql
@@ -131,34 +115,40 @@ services:
   catalog-service:
     build: ./catalog-services/app
     container_name: catalog-service
+    volumes:
+      - ./catalog-services/app:/var/www
+      - catalog_vendor:/var/www/vendor
     environment:
-      DB_HOST: catalog-db
-      DB_DATABASE: ${MYSQL_DATABASE}
-      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      APP_ENV: local
+      APP_DEBUG: "true"
       DB_CONNECTION: mysql
+      DB_HOST: catalog-db
       DB_PORT: 3306
-      DB_USERNAME: root
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "${CATALOG_PORT}:8000"
     depends_on:
       - catalog-db
 
-  # 1. phpMyAdmin untuk Catalog DB (MySQL)
-  phpmyadmin-catalog:
-    image: phpmyadmin/phpmyadmin
-    container_name: phpmyadmin-catalog
-    environment:
-      PMA_HOST: catalog-db         # Konek ke container MySQL
-      PMA_PORT: 3306
-      # Opsional: biar tidak ngetik password terus
-      PMA_USER: root
-      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD} 
+  mongo-express-user:
+    image: mongo-express
+    container_name: mongo-express-user
+    restart: always
     ports:
-      - "8082:80"
+      - "8083:8081"
+    environment:
+      # Menggunakan URL langsung jauh lebih ampuh daripada memisah SERVER dan PORT
+      - ME_CONFIG_MONGODB_URL=mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASS}@user-db:27017/?authSource=admin
+      # Login untuk masuk ke halaman webnya
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
     depends_on:
-      - catalog-db
+      - user-db
 
 volumes:
   user_mongo_data:
   catalog_mysql_data:
   order_postgres_data:
+  catalog_vendor:

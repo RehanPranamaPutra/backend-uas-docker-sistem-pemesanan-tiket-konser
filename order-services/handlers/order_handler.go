@@ -7,6 +7,7 @@ import (
 	"order-services/database"
 	"order-services/models"
 	"strings"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,60 +24,88 @@ func CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// 1. AMBIL HARGA DARI LARAVEL
+	// 1. AMBIL HARGA DARI LARAVEL (Catalog Service)
 	laravelURL := fmt.Sprintf("http://catalog-service:8000/api/concerts/%d", order.EventID)
 	respL, err := http.Get(laravelURL)
 	if err != nil || respL.StatusCode != 200 {
-		c.JSON(404, gin.H{"error": "Konser tidak ditemukan di Laravel"})
+		c.JSON(404, gin.H{"error": "Layanan Katalog tidak tersedia atau Konser tidak ditemukan"})
 		return
 	}
 	var concert LaravelConcert
 	json.NewDecoder(respL.Body).Decode(&concert)
+	
+	// Hitung Total (Keamanan: Backend yang menghitung harga, bukan frontend)
 	order.Total = float64(order.Quantity) * concert.Price
 
-	// 2. TANYA PYTHON (RESERVE STOK)
-	// Pastikan URL menyertakan user_id sesuai main.py Python
-	pythonURL := fmt.Sprintf("http://reservation-service:5002/reserve/%d/%d/%d", 
+	// 2. TANYA PYTHON (Reservation Service) - Kunci Stok di Redis
+	// FINAL: Menggunakan %s di bagian akhir karena UserID adalah String MongoDB
+	pythonURL := fmt.Sprintf("http://reservation-service:5002/reserve/%d/%d/%s", 
                   order.EventID, order.Quantity, order.UserID)
 	respP, err := http.Post(pythonURL, "application/json", nil)
 	
 	if err != nil || respP.StatusCode != 200 {
-		c.JSON(409, gin.H{"error": "Stok habis atau sedang dikunci"})
+		// Jika Python kirim 400/409, berarti stok habis atau user sedang ada lock aktif
+		c.JSON(http.StatusConflict, gin.H{"error": "Stok tiket tidak mencukupi atau Anda memiliki pesanan yang belum dibayar"})
 		return
 	}
 
-	// 3. SIMPAN PENDING KE POSTGRES
+	// 3. SIMPAN STATUS PENDING KE POSTGRES
 	order.Status = "PENDING"
-	database.DB.Create(&order)
+	if err := database.DB.Create(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database Postgres gagal menyimpan data"})
+		return
+	}
 
-	c.JSON(201, gin.H{"message": "Pesanan dibuat (PENDING)", "data": order})
+	c.JSON(201, gin.H{
+		"message": "Pesanan berhasil dibuat (Status: PENDING)",
+		"data":    order,
+	})
 }
 
 func ConfirmPayment(c *gin.Context) {
 	id := c.Param("id")
 	var order models.Order
+
+	// 1. Cari data order di Postgres
 	if err := database.DB.First(&order, id).Error; err != nil {
-		c.JSON(404, gin.H{"error": "Order not found"})
+		c.JSON(404, gin.H{"error": "Data pesanan tidak ditemukan di database"})
 		return
 	}
 
-	// 1. UPDATE POSTGRES
+	// 2. Update status di Postgres menjadi SUCCESS
 	order.Status = "SUCCESS"
 	database.DB.Save(&order)
 
-	// 2. KONFIRMASI KE PYTHON (Hapus Lock)
-	confirmURL := fmt.Sprintf("http://reservation-service:5002/confirm-payment/%d/%d", 
-                   order.EventID, order.UserID)
-	http.Post(confirmURL, "application/json", nil)
+	// 3. KONFIRMASI KE PYTHON (Hapus Lock di Redis karena sudah bayar)
+	// FINAL: Pastikan mengirim 3 parameter (%d/%d/%s) agar sinkron dengan main.py
+	confirmURL := fmt.Sprintf("http://reservation-service:5002/confirm-payment/%d/%d/%s", 
+                  order.EventID, order.Quantity, order.UserID)
+	
+	// Kirim POST dengan body kosong
+	http.Post(confirmURL, "application/json", strings.NewReader(""))
 
-	// 3. UPDATE STOK PERMANEN DI LARAVEL (MySQL)
-	patchURL := fmt.Sprintf("http://catalog-service:8000/api/concerts/%d/stock", order.EventID)
+	// 4. UPDATE STOK PERMANEN DI LARAVEL (MySQL)
+	laravelURL := fmt.Sprintf("http://catalog-service:8000/api/concerts/%d/stock", order.EventID)
+	// Laravel menerima 'reduce_by' untuk mengurangi stok MySQL
 	payload := strings.NewReader(fmt.Sprintf(`{"reduce_by": %d}`, order.Quantity))
-	req, _ := http.NewRequest("PATCH", patchURL, payload)
+	req, _ := http.NewRequest("PATCH", laravelURL, payload)
 	req.Header.Add("Content-Type", "application/json")
 	
 	client := &http.Client{}
 	client.Do(req)
 
-	c.JSON(200, gin.H{"message": "Pembayaran Berhasil! Stok Sinkron."})
+	c.JSON(200, gin.H{"message": "Pembayaran Berhasil! Stok MySQL & Redis telah diperbarui."})
+}
+
+func GetUserOrders(c *gin.Context) {
+	userId := c.Param("userId") // Ini akan menerima String MongoDB ID
+	var orders []models.Order
+
+	// Mencari berdasarkan UserID String
+	if err := database.DB.Where("user_id = ?", userId).Order("created_at desc").Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket"})
+		return
+	}
+
+	c.JSON(http.StatusOK, orders)
 }
