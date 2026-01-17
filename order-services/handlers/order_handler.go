@@ -62,6 +62,20 @@ func CreateOrder(c *gin.Context) {
 	})
 }
 
+func GetAllOrders(c *gin.Context) {
+    var orders []models.Order
+    
+    // Mengambil semua data dari database (Select * from orders)
+    // Sesuaikan 'database.DB' dengan variabel koneksi DB kamu
+    if err := database.DB.Find(&orders).Error; err != nil {
+        c.JSON(500, gin.H{"message": "Gagal mengambil data order", "error": err.Error()})
+        return
+    }
+
+    // Return data sebagai JSON
+    c.JSON(200, gin.H{"data": orders})
+}
+
 func ConfirmPayment(c *gin.Context) {
 	id := c.Param("id")
 	var order models.Order
